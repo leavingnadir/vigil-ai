@@ -46,22 +46,31 @@ Then perform a strict zero-trust security audit:
 - Assign an honest risk_score from 1 to 10.
 """
 
-MODELS_TO_TRY = ["gemini-3.8-flash"]
+MODELS_TO_TRY = [
+    "gemini-3.5-flash-lite",
+    "gemini-4-hydrogen",
+    "gemini-3.8-flash",
+]
 
 @app.post("/api/generate", response_model=FirewallAuditResponse)
 def generate_firewall_rules(req: RuleRequest):
     last_error = None
     for model_name in MODELS_TO_TRY:
         try:
+            config_args = {
+                "system_instruction": SYSTEM_PROMPT,
+                "response_mime_type": "application/json",
+                "response_schema": FirewallAuditResponse,
+                "temperature": 0.2,
+            }
+            # Keep latency under 2 seconds on reasoning models
+            if model_name in ("gemini-4-hydrogen", "gemini-3.8-flash"):
+                config_args["thinking_config"] = types.ThinkingConfig(thinking_level="low")
+
             response = client.models.generate_content(
                 model=model_name,
                 contents=f"Environment: {req.environment}\nTraffic Request: {req.prompt}",
-                config=types.GenerateContentConfig(
-                    system_instruction=SYSTEM_PROMPT,
-                    response_mime_type="application/json",
-                    response_schema=FirewallAuditResponse,
-                    temperature=0.2,
-                ),
+                config=types.GenerateContentConfig(**config_args),
             )
             return FirewallAuditResponse.model_validate_json(response.text)
         except Exception as e:
